@@ -149,8 +149,10 @@ clients.
   exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze,
   vibrance, saturation, parametric and point tone curves (RGB/R/G/B), color mixer
   (HSL, 8 bands), black & white mix, color grading wheels, sharpening with
-  automatic noise masking, luminance and color noise reduction, lens distortion
-  and vignetting, post-crop vignette, grain, calibration, crop/straighten/rotate/
+  automatic noise masking, luminance and color noise reduction, lens corrections
+  (the camera's own distortion, vignetting and chromatic aberration profile for
+  the lens used, read from Sony ARW files, plus manual distortion and
+  vignetting), post-crop vignette, grain, calibration, crop/straighten/rotate/
   flip, profiles (standard, neutral, vivid, flat). Applying a preset resets every
   develop setting first (masks included; the crop stays).
 - **Masks**: linear and radial gradients, brush (feather, flow, erase), luminance
@@ -279,7 +281,9 @@ photographs, Claude (orange) and alerts such as clipping (red) carry color.
   read.
 - Demosaicing is Malvar-He-Cutler: at 100% on low-ISO files fine texture is a
   little softer than Apple's or Adobe's engines.
-- No AI masks (subject/sky/people), no healing/cloning, no lens profiles.
+- No AI masks (subject/sky/people), no healing/cloning. Lens profiles only
+  where the camera wrote them into the file (Sony ARW); other files get the
+  manual distortion and vignetting sliders.
 - Tested on Sony A7 III files and Adobe's DNG samples; other cameras' ARW files
   should work when their model is in the color table.
 - Undo history lives in memory and is lost when the app restarts.

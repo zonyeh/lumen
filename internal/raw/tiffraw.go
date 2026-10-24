@@ -187,11 +187,15 @@ func decodeTIFFRaw(data []byte) (*Image, error) {
 			im.BaselineExposure = e.Float(0)
 		}
 	} else {
+		sr2 := sonySR2(bytes.NewReader(data), int64(len(data)), t.bo, d0)
+		if sr2 != nil {
+			im.Lens = sonyLensCorr(sr2)
+		}
 		if wb := rif.Get(0x7313).Floats(); len(wb) == 4 && wb[1] > 0 {
 			im.CamMul = [3]float64{wb[0] / wb[1], 1, wb[3] / wb[1]}
 		} else if wb := rif.Get(0x7303).Floats(); len(wb) == 4 && wb[0] > 0 {
 			im.CamMul = [3]float64{wb[1] / wb[0], 1, wb[2] / wb[0]}
-		} else if sr2 := sonySR2(data, t.bo, d0); sr2 != nil {
+		} else if sr2 != nil {
 			if wb := sr2.Get(0x7313).Floats(); len(wb) == 4 && wb[1] > 0 {
 				im.CamMul = [3]float64{wb[0] / wb[1], 1, wb[3] / wb[1]}
 			} else if wb := sr2.Get(0x7303).Floats(); len(wb) == 4 && wb[0] > 0 {

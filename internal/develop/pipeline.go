@@ -170,6 +170,7 @@ type prep struct {
 	blacks      float32
 	lensVig     float32
 	lensMid     float32
+	lp          *lensProfile // the camera's lens corrections (vignetting applied here)
 	whites      float32
 	long        float64 // long edge in full-resolution pixels
 	treatBW     bool
@@ -230,6 +231,7 @@ func newPrepLook(src *Source, s *Settings, g *geom, look *CameraLook) *prep {
 	p.dehaze = float32(s.Dehaze / 100)
 	p.lensVig = float32(s.Lens.Vignetting / 100)
 	p.lensMid = float32(s.Lens.VignettingMidpoint / 100)
+	p.lp = g.lp
 	p.long = math.Max(float64(src.W), float64(src.H))
 	p.treatBW = s.Treatment == "bw"
 	p.master = curveLUT(s.Curve, s.Curve.RGB, true)
@@ -310,7 +312,7 @@ func Render(src *Source, s *Settings, opt RenderOptions) (*Result, error) {
 		}
 		level, ls, kind = full, float64(full.W)/float64(src.W), "full"
 	}
-	cam, u, v := g.warp(level, ls)
+	cam, u, v, fu, fv := g.warp(level, ls)
 	look := src.Look
 	if opt.look != nil {
 		look = opt.look
@@ -327,7 +329,7 @@ func Render(src *Source, s *Settings, opt RenderOptions) (*Result, error) {
 	}
 
 	ctx := &maskContext{
-		w: w, h: h, u: u, v: v, imgW: float64(src.W), imgH: float64(src.H),
+		w: w, h: h, u: fu, v: fv, imgW: float64(src.W), imgH: float64(src.H),
 		toOut: func(x, y float64) (float64, float64) {
 			return g.toOutput(x*float64(src.W), y*float64(src.H))
 		},
@@ -539,11 +541,17 @@ func (p *prep) passA(cam, u, v []float32, f map[string][]float32, L, A, B []floa
 			if fe != nil {
 				ev += fe[i]
 			}
-			if p.lensVig != 0 {
+			if p.lensVig != 0 || p.lp != nil && p.lp.vignetting {
+				// Squared normalized radius of the recorded pixel (1 = corners).
 				dx, dy := (u[i]-0.5)*2, (v[i]-0.5)*2
 				rr := (dx*dx*float32(p.g.W*p.g.W) + dy*dy*float32(p.g.H*p.g.H)) / float32(p.g.W*p.g.W+p.g.H*p.g.H)
-				wgt := float32(math.Pow(float64(rr), float64(1+p.lensMid*2)))
-				ev += p.lensVig * 1.5 * wgt
+				if p.lensVig != 0 {
+					wgt := float32(math.Pow(float64(rr), float64(1+p.lensMid*2)))
+					ev += p.lensVig * 1.5 * wgt
+				}
+				if p.lp != nil && p.lp.vignetting {
+					ev += p.lp.falloffEV(rr)
+				}
 			}
 			gain := fastExp2(ev)
 			r, g, b = r*gain, g*gain, b*gain

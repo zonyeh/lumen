@@ -280,12 +280,14 @@ function maskDetail(n, m) {
   const head = [];
   const amount = slider({ key: 'amount', label: 'Amount', min: 0, max: 200, step: 1 }, {
     key: 'mask.amount', def: 100, noRegister: true,
-    onChange: (p, v, g, final) => { m.amount = v; updateMask({ amount: v }, { gesture: g, label: `Mask amount ${v}`, final }); },
+    onChange: (p, v, g, final) => { const mm = activeMask(); if (mm) mm.amount = v; updateMask({ amount: v }, { gesture: g, label: `Mask amount ${v}`, final }); },
   });
   localCtl.set('amount', amount);
   head.push(amount.row);
+  const invertBox = h('input', { type: 'checkbox', checked: m.invert ? 'checked' : null, onchange: (e) => updateMask({ invert: e.target.checked }, { label: 'Invert mask' }) });
+  localCtl.set('invert', { set: (v) => { invertBox.checked = !!v; } });
   head.push(h('div', { class: 'ctl-row' }, h('span', { class: 'lbl' }, 'Invert'),
-    h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: m.invert ? 'checked' : null, onchange: (e) => updateMask({ invert: e.target.checked }, { label: 'Invert mask' }) }), h('span', { class: 'track' }))));
+    h('label', { class: 'switch' }, invertBox, h('span', { class: 'track' }))));
 
   // Components.
   head.push(h('div', { class: 'list-head' }, 'Shapes in this mask'));
@@ -329,27 +331,30 @@ function maskDetail(n, m) {
     for (const [key, label] of [['lumMin', 'From'], ['lumMax', 'To'], ['lumFeather', 'Smoothness']]) {
       const ctl = slider({ key, label, min: 0, max: 100, step: 1 }, {
         key: 'comp.' + key, noRegister: true,
-        onChange: (p, v, g, final) => { c[key] = v; updateMask({ component: { id: c.id, [key]: v } }, { gesture: g, label: 'Luminance range', final }); },
+        onChange: (p, v, g, final) => { const cc = liveComp(c.id); if (cc) cc[key] = v; updateMask({ component: { id: c.id, [key]: v } }, { gesture: g, label: 'Luminance range', final }); },
       });
       ctl.set(c[key] || 0);
+      localCtl.set('comp.' + key, ctl);
       shapeBody.push(ctl.row);
     }
   } else if (c?.type === 'color') {
     shapeBody.push(h('div', { class: 'sub-head' }, 'Color range'));
     const ctl = slider({ key: 'colorRange', label: 'Range', min: 1, max: 100, step: 1 }, {
       key: 'comp.colorRange', noRegister: true,
-      onChange: (p, v, g, final) => { c.colorRange = v; updateMask({ component: { id: c.id, colorRange: v } }, { gesture: g, label: 'Color range', final }); },
+      onChange: (p, v, g, final) => { const cc = liveComp(c.id); if (cc) cc.colorRange = v; updateMask({ component: { id: c.id, colorRange: v } }, { gesture: g, label: 'Color range', final }); },
     });
     ctl.set(c.colorRange || 30);
+    localCtl.set('comp.colorRange', ctl);
     shapeBody.push(ctl.row, h('button', { class: 'btn small', onclick: () => startColorPick(m.id, c.id) }, 'Pick the color again'));
   } else if (c && (c.type === 'linear' || c.type === 'radial')) {
     shapeBody.push(h('div', { class: 'hint' }, c.type === 'linear' ? 'Drag the end points on the photo; drag the middle to move.' : 'Drag the center to move, the side handles to resize and the outer dot to rotate.'));
     if (c.type === 'radial') {
       const ctl = slider({ key: 'feather', label: 'Feather', min: 0, max: 100, step: 1 }, {
         key: 'comp.feather', noRegister: true,
-        onChange: (p, v, g, final) => { c.feather = v; drawOverlay(); updateMask({ component: { id: c.id, feather: v } }, { gesture: g, label: 'Feather', final }); },
+        onChange: (p, v, g, final) => { const cc = liveComp(c.id); if (cc) cc.feather = v; drawOverlay(); updateMask({ component: { id: c.id, feather: v } }, { gesture: g, label: 'Feather', final }); },
       });
       ctl.set(c.feather || 0);
+      localCtl.set('comp.feather', ctl);
       shapeBody.push(ctl.row);
     }
   }
@@ -373,10 +378,12 @@ function maskDetail(n, m) {
 }
 
 // maskSig changes when the panel's structure does: masks, their names and
-// visibility, and their shapes.
+// visibility, and their shapes. Values (amount, adjustments, feather,
+// ranges, invert) are not part of it: a rebuild would replace the slider
+// under the pointer mid-drag, so syncValues moves them instead.
 function maskSig(n) {
-  return (n?.settings?.masks || []).map((m) => [m.id, m.name, m.hidden, m.invert, JSON.stringify(m.adjust || {}),
-    (m.components || []).map((c) => [c.id, c.type, c.mode, c.invert, c.feather, c.lumMin, c.lumMax, c.lumFeather, c.colorRange, (c.strokes || []).length].join(',')).join(';')].join(':')).join('|');
+  return (n?.settings?.masks || []).map((m) => [m.id, m.name, m.hidden,
+    (m.components || []).map((c) => [c.id, c.type, c.mode, c.invert, (c.strokes || []).length].join(',')).join(';')].join(':')).join('|');
 }
 
 // refreshPanel rebuilds the masks panel when its structure changed (a
@@ -396,7 +403,20 @@ function syncValues(animate = false) {
   const m = activeMask();
   if (!m) return;
   localCtl.get('amount')?.set(m.amount || 100, animate);
+  localCtl.get('invert')?.set(!!m.invert);
   for (const lp of S.schema.localParams) localCtl.get(lp.key)?.set(m.adjust?.[lp.key] || 0, animate);
+  const c = activeComp(m);
+  if (!c) return;
+  localCtl.get('comp.feather')?.set(c.feather || 0, animate);
+  for (const key of ['lumMin', 'lumMax', 'lumFeather']) localCtl.get('comp.' + key)?.set(c[key] || 0, animate);
+  localCtl.get('comp.colorRange')?.set(c.colorRange || 30, animate);
+}
+
+// The mask and shape objects a control was built with go stale as soon as
+// the server answers (the node is replaced): handlers look them up again.
+function liveComp(compId) {
+  const m = activeMask();
+  return (m?.components || []).find((c) => c.id === compId);
 }
 
 export function setOverlay(v) {

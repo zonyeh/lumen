@@ -347,6 +347,7 @@ const SHORT = {
   'detail.sharpen': 'Amount', 'detail.noise': 'Luminance', 'detail.colorNoise': 'Color', 'detail.colorNoiseDetail': 'Color detail',
   'effects.vignette': 'Amount', 'effects.grain': 'Amount', 'curve.shadowSplit': 'Shadows', 'curve.midSplit': 'Midtones', 'curve.highlightSplit': 'Highlights',
   'calibration.shadowTint': 'Shadow tint',
+  'lens.profileDistortion': 'Distortion', 'lens.profileVignetting': 'Vignetting', 'lens.profileCA': 'Color fringing',
 };
 
 function rows(keys) {
@@ -373,7 +374,7 @@ function markSections() {
 
 // ---------- build ----------
 
-let profileSel, treatSeg, wbSel, pickBtn, hslSeg, aspectSel;
+let profileSel, treatSeg, wbSel, pickBtn, hslSeg, aspectSel, lensInfo;
 let hslMode = 'hue';
 let curveChannel = 'rgb';
 let curveCanvas;
@@ -459,7 +460,14 @@ function buildEdit() {
     ...rows(['detail.noise', 'detail.noiseDetail', 'detail.colorNoise', 'detail.colorNoiseDetail']),
     h('div', { class: 'hint' }, 'Zoom in or render at 100% to judge detail settings.'),
   ]));
-  tabEdit.append(section('lens', 'Lens corrections', rows(['lens.distortion', 'lens.vignetting', 'lens.vignettingMidpoint'])));
+  lensInfo = h('div', { class: 'hint' });
+  tabEdit.append(section('lens', 'Lens corrections', [
+    h('div', { class: 'sub-head' }, 'Camera profile'),
+    lensInfo,
+    ...rows(['lens.profileDistortion', 'lens.profileVignetting', 'lens.profileCA']),
+    h('div', { class: 'sub-head' }, 'Manual'),
+    ...rows(['lens.distortion', 'lens.vignetting', 'lens.vignettingMidpoint']),
+  ]));
   tabEdit.append(section('effects', 'Effects', [
     h('div', { class: 'sub-head' }, 'Post-crop vignette'),
     ...rows(['effects.vignette', 'effects.vignetteMidpoint', 'effects.vignetteRoundness', 'effects.vignetteFeather', 'effects.vignetteHighlights']),
@@ -722,6 +730,10 @@ export function updatePanel(animate = false) {
   const std = [...profileSel.options].find((o) => o.value === 'standard');
   const style = n.info?.meta?.style;
   if (std) std.textContent = n.info?.raw && style ? `Camera ${style}` : 'Standard';
+  const lensName = n.info?.meta?.lens;
+  lensInfo.textContent = n.info?.lens
+    ? `The camera's corrections for ${lensName || 'the lens used'}, as it applies them to its JPEG.`
+    : 'This file carries no lens corrections from the camera: these three have no effect.';
   [...treatSeg.children].forEach((b) => b.classList.toggle('active', b.dataset.v === n.settings.treatment));
   wbSel.value = n.settings.wb;
   aspectSel.value = n.settings.crop.aspect || 'free';

@@ -374,7 +374,23 @@ func (a *App) prepare(id string) {
 	// Reads only the proxy header when the proxy is complete; refits the
 	// camera look of proxies made by older builds.
 	src, err := a.Engine.Prepare(n.Path)
-	if err != nil || (n.AsShot != nil && n.Sharp != nil && n.Look == src.LookV) {
+	if err != nil {
+		return
+	}
+	// The node's info was read at import: albums made before the picture
+	// style and the lens corrections were recorded learn them from the
+	// prepared source here.
+	if n.Info != nil && (n.Info.Lens != (src.Lens != nil) || (src.Meta.Style != "" && n.Info.Meta.Style != src.Meta.Style)) {
+		_ = a.Store.Silent(id, func(n *doc.Node) {
+			if n.Info != nil {
+				n.Info.Lens = src.Lens != nil
+				if src.Meta.Style != "" {
+					n.Info.Meta.Style = src.Meta.Style
+				}
+			}
+		})
+	}
+	if n.AsShot != nil && n.Sharp != nil && n.Look == src.LookV {
 		return
 	}
 	a.recordSource(id, src)
@@ -397,6 +413,9 @@ func (a *App) recordSource(id string, src *develop.Source) {
 		if n.Info != nil && (n.Info.Width != src.W || n.Info.Height != src.H) {
 			n.Info.Width, n.Info.Height = src.W, src.H
 			n.FitHeight()
+		}
+		if n.Info != nil {
+			n.Info.Lens = src.Lens != nil
 		}
 	})
 }

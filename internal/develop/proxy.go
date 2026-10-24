@@ -52,6 +52,7 @@ type proxyHeader struct {
 	Sharp       Sharpness     `json:"sharp"`
 	InFocus     float64       `json:"inFocus"`
 	Look        *CameraLook   `json:"look,omitempty"`
+	Lens        *raw.LensCorr `json:"lens,omitempty"`
 	LookV       int           `json:"lookV"`         // the fit this proxy was built with
 	CRC         uint32        `json:"crc,omitempty"` // of the compressed body (0 in older files)
 }
@@ -90,11 +91,18 @@ func readHeader(r io.Reader) (*proxyHeader, error) {
 	if h.Version != proxyVersion {
 		return nil, errors.New("old proxy")
 	}
-	if h.Meta.Style == "" && strings.HasPrefix(strings.ToUpper(h.Meta.Make), "SONY") {
-		// Proxies written before the picture style was read: take it from
-		// the file's EXIF instead of rebuilding.
-		if m, err := raw.ReadMetadata(h.Path); err == nil {
-			h.Meta.Style = m.Style
+	if h.Raw && strings.HasPrefix(strings.ToUpper(h.Meta.Make), "SONY") {
+		// Proxies written before the picture style and the lens corrections
+		// were read: take them from the file instead of rebuilding.
+		if h.Meta.Style == "" {
+			if m, err := raw.ReadMetadata(h.Path); err == nil {
+				h.Meta.Style = m.Style
+			}
+		}
+		if h.Lens == nil {
+			if lc, err := raw.ReadLensCorr(h.Path); err == nil {
+				h.Lens = lc
+			}
 		}
 	}
 	return &h, nil
@@ -113,6 +121,7 @@ func (h *proxyHeader) source() *Source {
 		ModTime:     h.ModTime,
 		Sharp:       h.Sharp,
 		Look:        h.Look,
+		Lens:        h.Lens,
 		LookV:       h.LookV,
 		orientation: h.Orientation,
 	}
@@ -207,6 +216,7 @@ func (p *ProxyStore) Build(path string, st os.FileInfo, fullLook bool) (*Source,
 		Color:       newColorimetry(im.CamXYZ, im.CamMul, im.Raw),
 		Baseline:    im.BaselineExposure,
 		Meta:        im.Meta,
+		Lens:        im.Lens,
 		ModTime:     st.ModTime().UnixNano(),
 		orientation: im.Orientation,
 	}
@@ -266,7 +276,7 @@ func (p *ProxyStore) Build(path string, st os.FileInfo, fullLook bool) (*Source,
 	h := proxyHeader{
 		Version: proxyVersion, Path: path, Size: st.Size(), ModTime: st.ModTime().UnixNano(),
 		Kind: s.Kind, Raw: s.Raw, W: s.W, H: s.H, Orientation: s.orientation,
-		CamXYZ: [3][3]float64(s.Color.CamXYZ), AsShot: s.Color.AsShot, Baseline: s.Baseline, Meta: s.Meta,
+		CamXYZ: [3][3]float64(s.Color.CamXYZ), AsShot: s.Color.AsShot, Baseline: s.Baseline, Meta: s.Meta, Lens: s.Lens,
 		PW: s.levels[0].W, PH: s.levels[0].H, FW: flv.w, FH: flv.h, Sharp: s.Sharp, InFocus: fm.InFocus,
 		Look: s.Look, LookV: s.LookV,
 	}

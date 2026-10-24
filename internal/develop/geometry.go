@@ -22,13 +22,14 @@ type geom struct {
 	rot    int
 	flipH  bool
 	flipV  bool
-	cx, cy float64 // crop center in frame pixels
-	cw, ch float64 // crop size in frame pixels
-	ca, sa float64 // cos/sin of the straighten angle
-	k      float64 // distortion coefficient
-	ks     float64 // distortion auto-scale
-	scale  float64 // output pixels per full-resolution pixel
-	rx, ry float64 // region origin inside the crop, crop pixels
+	cx, cy float64      // crop center in frame pixels
+	cw, ch float64      // crop size in frame pixels
+	ca, sa float64      // cos/sin of the straighten angle
+	k      float64      // distortion coefficient
+	ks     float64      // distortion auto-scale
+	lp     *lensProfile // the camera's lens corrections, when present and enabled
+	scale  float64      // output pixels per full-resolution pixel
+	rx, ry float64      // region origin inside the crop, crop pixels
 	outW   int
 	outH   int
 	fullW  float64 // output size of the whole crop at this scale
@@ -56,6 +57,9 @@ func newGeom(src *Source, s *Settings, opt RenderOptions) *geom {
 	g.ks = 1
 	if g.k > 0 {
 		g.ks = 1 / (1 + g.k)
+	}
+	if src.Raw {
+		g.lp = newLensProfile(src.Lens, &s.Lens)
 	}
 
 	// A region is a part of the frame: keep it inside [0,1] (and not empty).
@@ -121,8 +125,10 @@ func newGeom(src *Source, s *Settings, opt RenderOptions) *geom {
 // whole 24 MP frame and any screen).
 const maxOutPixels = 36e6
 
-// toImage maps an output pixel position to oriented image pixels.
-func (g *geom) toImage(ox, oy float64) (float64, float64) {
+// frame maps an output pixel position to the corrected picture's pixels
+// (oriented, full resolution): orientation, crop and straightening, before
+// the lens corrections move anything.
+func (g *geom) frame(ox, oy float64) (float64, float64) {
 	// Crop-local, relative to the crop center.
 	dx := g.rx + ox/g.scale - g.cw/2
 	dy := g.ry + oy/g.scale - g.ch/2
@@ -135,25 +141,55 @@ func (g *geom) toImage(ox, oy float64) (float64, float64) {
 	if g.flipV {
 		fy = g.FH - fy
 	}
-	var x, y float64
 	switch g.rot {
 	case 90:
-		x, y = fy, g.H-fx
+		return fy, g.H - fx
 	case 180:
-		x, y = g.W-fx, g.H-fy
+		return g.W - fx, g.H - fy
 	case 270:
-		x, y = g.W-fy, fx
-	default:
-		x, y = fx, fy
+		return g.W - fy, fx
 	}
-	if g.k != 0 {
-		hw, hh := g.W/2, g.H/2
-		rr := math.Hypot(hw, hh)
-		nx, ny := (x-hw)/rr*g.ks, (y-hh)/rr*g.ks
-		f := 1 + g.k*(nx*nx+ny*ny)
-		x, y = hw+nx*f*rr, hh+ny*f*rr
+	return fx, fy
+}
+
+// manual applies the Distortion slider about the image center.
+func (g *geom) manual(x, y float64) (float64, float64) {
+	if g.k == 0 {
+		return x, y
 	}
+	hw, hh := g.W/2, g.H/2
+	rr := math.Hypot(hw, hh)
+	nx, ny := (x-hw)/rr*g.ks, (y-hh)/rr*g.ks
+	f := 1 + g.k*(nx*nx+ny*ny)
+	return hw + nx*f*rr, hh + ny*f*rr
+}
+
+// place maps an output pixel position to its frame position and to where
+// the recorded image is sampled for it (green channel).
+func (g *geom) place(ox, oy float64) (fx, fy, x, y float64) {
+	fx, fy = g.frame(ox, oy)
+	x, y = fx, fy
+	if g.lp != nil && g.lp.warps {
+		x, y = g.lp.sample(x, y, g.W, g.H, g.lp.dr)
+	}
+	x, y = g.manual(x, y)
+	return
+}
+
+// toImage maps an output pixel position to oriented image pixels.
+func (g *geom) toImage(ox, oy float64) (float64, float64) {
+	_, _, x, y := g.place(ox, oy)
 	return x, y
+}
+
+// toImageRGB is toImage per channel: red and blue land a little away from
+// green by the lens's chromatic aberration.
+func (g *geom) toImageRGB(ox, oy float64) (xr, yr, xg, yg, xb, yb float64) {
+	fx, fy := g.frame(ox, oy)
+	xr, yr = g.manual(g.lp.sample(fx, fy, g.W, g.H, g.lp.drR))
+	xg, yg = g.manual(g.lp.sample(fx, fy, g.W, g.H, g.lp.dr))
+	xb, yb = g.manual(g.lp.sample(fx, fy, g.W, g.H, g.lp.drB))
+	return
 }
 
 // toOutput is the inverse of toImage (ignoring distortion), for brushes.
@@ -181,33 +217,50 @@ func (g *geom) toOutput(x, y float64) (float64, float64) {
 	return (dx + g.cw/2 - g.rx) * g.scale, (dy + g.ch/2 - g.ry) * g.scale
 }
 
-// warp resamples a pyramid level into the output grid, returning camera RGB
-// and the normalized image coordinates of every pixel.
-func (g *geom) warp(level *raw.RGBF, ls float64) (cam []float32, u, v []float32) {
+// warp resamples a pyramid level into the output grid, returning camera
+// RGB, the normalized image coordinates each pixel was sampled from (u, v)
+// and the normalized frame coordinates it sits at (fu, fv: where a mask
+// drawn on the corrected picture means it; the same arrays when nothing
+// warps).
+func (g *geom) warp(level *raw.RGBF, ls float64) (cam []float32, u, v, fu, fv []float32) {
 	n := g.outW * g.outH
 	cam = make([]float32, n*3)
 	u = make([]float32, n)
 	v = make([]float32, n)
+	warped := g.k != 0 || (g.lp != nil && g.lp.warps)
+	fu, fv = u, v
+	if warped {
+		fu = make([]float32, n)
+		fv = make([]float32, n)
+	}
 	ratio := ls / g.scale // level pixels per output pixel
 	// Supersample so the samples cover each output pixel's footprint in
 	// the level (an area filter), up to 5x5.
 	ss := max(1, min(5, int(math.Ceil(ratio-0.15))))
 	inv := float32(1) / float32(ss*ss)
-	axisAligned := g.sa == 0 && g.k == 0
-	if axisAligned && g.rot == 0 && !g.flipH && !g.flipV && ratio >= 1.5 {
+	plain := g.sa == 0 && g.rot == 0 && !g.flipH && !g.flipV
+	// Without straightening or warping the mapping is a scale and a shift,
+	// so subsamples can be placed without mapping each one.
+	affine := plain && !warped
+	caOn := g.lp != nil && g.lp.ca
+	if plain && ratio >= 1.5 {
 		// A plain reduction: every source pixel around an output pixel is
 		// averaged with a tent weight (bilinear area filter, support one
 		// output pixel each way), which keeps edges smooth, noise low and
 		// nothing blocky; sampling a few points leaves stair steps and
-		// speckle.
+		// speckle. Lens distortion only moves where the window sits; the
+		// chromatic aberration is below a pixel at these reductions.
 		rad := ratio // tent radius in source pixels
 		parallelRows(g.outH, func(y0, y1 int) {
 			wx := make([]float32, 0, int(2*rad)+3)
 			for oy := y0; oy < y1; oy++ {
 				for ox := 0; ox < g.outW; ox++ {
 					i := oy*g.outW + ox
-					ix, iy := g.toImage(float64(ox)+0.5, float64(oy)+0.5)
+					fx, fy, ix, iy := g.place(float64(ox)+0.5, float64(oy)+0.5)
 					u[i], v[i] = float32(ix/g.W), float32(iy/g.H)
+					if warped {
+						fu[i], fv[i] = float32(fx/g.W), float32(fy/g.H)
+					}
 					cx, cy := ix*ls, iy*ls
 					sx0, sx1 := max(int(math.Floor(cx-rad)), 0), min(int(math.Ceil(cx+rad)), level.W-1)
 					sy0, sy1 := max(int(math.Floor(cy-rad)), 0), min(int(math.Ceil(cy+rad)), level.H-1)
@@ -245,27 +298,47 @@ func (g *geom) warp(level *raw.RGBF, ls float64) (cam []float32, u, v []float32)
 		})
 		return
 	}
+	// sampleAt reads the level at an output position, each channel from
+	// its own place when the chromatic aberration is corrected.
+	sampleAt := func(px, py float64) (float32, float32, float32) {
+		if caOn {
+			xr, yr, xg, yg, xb, yb := g.toImageRGB(px, py)
+			r, _, _ := bilinearRGB(level, xr*ls, yr*ls)
+			_, gg, _ := bilinearRGB(level, xg*ls, yg*ls)
+			_, _, b := bilinearRGB(level, xb*ls, yb*ls)
+			return r, gg, b
+		}
+		jx, jy := g.toImage(px, py)
+		return bilinearRGB(level, jx*ls, jy*ls)
+	}
 	parallelRows(g.outH, func(y0, y1 int) {
 		for oy := y0; oy < y1; oy++ {
 			for ox := 0; ox < g.outW; ox++ {
 				i := oy*g.outW + ox
-				ix, iy := g.toImage(float64(ox)+0.5, float64(oy)+0.5)
+				px, py := float64(ox)+0.5, float64(oy)+0.5
+				fx, fy, ix, iy := g.place(px, py)
 				u[i], v[i] = float32(ix/g.W), float32(iy/g.H)
+				if warped {
+					fu[i], fv[i] = float32(fx/g.W), float32(fy/g.H)
+				}
 				var r, gg, b float32
 				if ss == 1 {
-					r, gg, b = bilinearRGB(level, ix*ls, iy*ls)
+					if caOn {
+						r, gg, b = sampleAt(px, py)
+					} else {
+						r, gg, b = bilinearRGB(level, ix*ls, iy*ls)
+					}
 				} else {
 					for sy := 0; sy < ss; sy++ {
 						for sx := 0; sx < ss; sx++ {
-							px := float64(ox) + (float64(sx)+0.5)/float64(ss)
-							py := float64(oy) + (float64(sy)+0.5)/float64(ss)
-							var jx, jy float64
-							if axisAligned && g.rot == 0 && !g.flipH && !g.flipV {
-								jx, jy = ix+(px-float64(ox)-0.5)/g.scale, iy+(py-float64(oy)-0.5)/g.scale
+							qx := float64(ox) + (float64(sx)+0.5)/float64(ss)
+							qy := float64(oy) + (float64(sy)+0.5)/float64(ss)
+							var a, bb, c float32
+							if affine {
+								a, bb, c = bilinearRGB(level, (ix+(qx-px)/g.scale)*ls, (iy+(qy-py)/g.scale)*ls)
 							} else {
-								jx, jy = g.toImage(px, py)
+								a, bb, c = sampleAt(qx, qy)
 							}
-							a, bb, c := bilinearRGB(level, jx*ls, jy*ls)
 							r, gg, b = r+a, gg+bb, b+c
 						}
 					}

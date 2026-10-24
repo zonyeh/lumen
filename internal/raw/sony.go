@@ -3,6 +3,7 @@ package raw
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 	"runtime"
 	"strings"
 	"sync"
@@ -88,13 +89,13 @@ func decodeARW2(src []byte, w, h int, curve []uint16, out []uint16) {
 
 // sonySR2 decrypts the SR2 private directory of older ARW files, which
 // holds white balance and levels.
-func sonySR2(data []byte, bo binary.ByteOrder, d0 *IFD) *IFD {
+func sonySR2(r io.ReaderAt, size int64, bo binary.ByteOrder, d0 *IFD) *IFD {
 	e := d0.Get(0xc634)
 	if e == nil || len(e.data) < 4 {
 		return nil
 	}
 	priv := int64(bo.Uint32(e.data))
-	t, _, err := newTIFF(bytes.NewReader(data), int64(len(data)))
+	t, _, err := newTIFF(r, size)
 	if err != nil {
 		return nil
 	}
@@ -108,10 +109,15 @@ func sonySR2(data []byte, bo binary.ByteOrder, d0 *IFD) *IFD {
 	if e := pd.Get(0x7221); e != nil && len(e.data) >= 4 && (e.Type == tUndefined || e.Type == tByte) {
 		key = bo.Uint32(e.data)
 	}
-	if off <= 0 || n <= 0 || off+n > int64(len(data)) {
+	if off <= 0 || n <= 0 || off+n > size {
 		return nil
 	}
-	buf := append([]byte(nil), data...)
+	// Only the file up to the end of the block is needed: the SR2 entries
+	// point inside it.
+	buf := make([]byte, off+n)
+	if _, err := r.ReadAt(buf, 0); err != nil {
+		return nil
+	}
 	sonyDecrypt(buf[off:off+n-n%4], key)
 	t2, _, err := newTIFF(bytes.NewReader(buf), int64(len(buf)))
 	if err != nil {
@@ -122,6 +128,29 @@ func sonySR2(data []byte, bo binary.ByteOrder, d0 *IFD) *IFD {
 		return nil
 	}
 	return sr2
+}
+
+// sonyLensCorr reads the lens corrections of the SR2 block: distortion
+// (0x7982) and vignetting (0x797d) as a count followed by that many knots,
+// chromatic aberration (0x7980) as a count followed by the red then the
+// blue knots.
+func sonyLensCorr(sr2 *IFD) *LensCorr {
+	dist, vig, ca := sr2.Get(0x7982).Floats(), sr2.Get(0x797d).Floats(), sr2.Get(0x7980).Floats()
+	if len(dist) < 3 {
+		return nil
+	}
+	nc := int(dist[0])
+	if nc < 2 || nc > 32 || len(dist) != nc+1 || len(vig) != nc+1 || int(vig[0]) != nc || len(ca) != 2*nc+1 || int(ca[0]) != 2*nc {
+		return nil
+	}
+	lc := &LensCorr{Distortion: make([]int16, nc), Vignetting: make([]int16, nc), CARed: make([]int16, nc), CABlue: make([]int16, nc)}
+	for i := 0; i < nc; i++ {
+		lc.Distortion[i] = int16(dist[i+1])
+		lc.Vignetting[i] = int16(vig[i+1])
+		lc.CARed[i] = int16(ca[i+1])
+		lc.CABlue[i] = int16(ca[nc+i+1])
+	}
+	return lc
 }
 
 // sonyStyle turns the Creative Style / Creative Look code the camera writes

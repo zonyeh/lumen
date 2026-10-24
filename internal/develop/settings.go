@@ -109,8 +109,13 @@ type Detail struct {
 	ColorNoiseDetail float64 `json:"colorNoiseDetail"`
 }
 
-// Lens holds manual lens corrections.
+// Lens holds the lens corrections: the camera's own profile for the lens
+// the photo was taken with (amounts, 100 = as the camera applies them to
+// its JPEG, 0 = off) and manual corrections on top.
 type Lens struct {
+	ProfileDistortion  float64 `json:"profileDistortion"`
+	ProfileVignetting  float64 `json:"profileVignetting"`
+	ProfileCA          float64 `json:"profileCA"`
 	Vignetting         float64 `json:"vignetting"`
 	VignettingMidpoint float64 `json:"vignettingMidpoint"`
 	Distortion         float64 `json:"distortion"`
@@ -200,7 +205,7 @@ func Defaults(raw bool) Settings {
 		Curve:     Curve{ShadowSplit: 25, MidSplit: 50, HighlightSplit: 75},
 		Grading:   Grading{Blending: 50},
 		Detail:    Detail{SharpenRadius: 1, SharpenDetail: 25, NoiseDetail: 50, ColorNoiseDetail: 50},
-		Lens:      Lens{VignettingMidpoint: 50},
+		Lens:      Lens{ProfileDistortion: 100, ProfileVignetting: 100, ProfileCA: 100, VignettingMidpoint: 50},
 		Effects:   Effects{VignetteMidpoint: 50, VignetteFeather: 50, GrainSize: 25, GrainRoughness: 50},
 		Crop:      Crop{W: 1, H: 1},
 		Masks:     []*Mask{},
@@ -210,6 +215,18 @@ func Defaults(raw bool) Settings {
 		s.Detail.ColorNoise = 25
 	}
 	return s
+}
+
+// UnmarshalJSON starts from the defaults, so settings saved before a
+// control existed get its default rather than zero.
+func (s *Settings) UnmarshalJSON(d []byte) error {
+	type plain Settings
+	p := plain(Defaults(true))
+	if err := json.Unmarshal(d, &p); err != nil {
+		return err
+	}
+	*s = Settings(p)
+	return nil
 }
 
 // Clone deep-copies the settings.
@@ -309,6 +326,9 @@ func init() {
 	reg("detail", "detail.colorNoise", "Color noise", 0, 100, 1, "", func(s *Settings) *float64 { return &s.Detail.ColorNoise })
 	reg("detail", "detail.colorNoiseDetail", "Color detail", 0, 100, 1, "", func(s *Settings) *float64 { return &s.Detail.ColorNoiseDetail })
 
+	reg("lens", "lens.profileDistortion", "Profile distortion", 0, 100, 1, "The camera's distortion correction for the lens used (100 = as the camera, 0 = off); Sony ARW files carry it", func(s *Settings) *float64 { return &s.Lens.ProfileDistortion })
+	reg("lens", "lens.profileVignetting", "Profile vignetting", 0, 100, 1, "The camera's light falloff correction for the lens used (100 = as the camera, 0 = off)", func(s *Settings) *float64 { return &s.Lens.ProfileVignetting })
+	reg("lens", "lens.profileCA", "Profile chromatic aberration", 0, 100, 1, "The camera's color fringing correction for the lens used (100 = as the camera, 0 = off)", func(s *Settings) *float64 { return &s.Lens.ProfileCA })
 	reg("lens", "lens.distortion", "Distortion", -100, 100, 1, "Positive removes barrel distortion", func(s *Settings) *float64 { return &s.Lens.Distortion })
 	reg("lens", "lens.vignetting", "Vignetting", -100, 100, 1, "Positive brightens the corners (lens correction)", func(s *Settings) *float64 { return &s.Lens.Vignetting })
 	reg("lens", "lens.vignettingMidpoint", "Midpoint", 0, 100, 1, "", func(s *Settings) *float64 { return &s.Lens.VignettingMidpoint })

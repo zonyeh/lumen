@@ -26,9 +26,10 @@ type Source struct {
 	Meta     raw.Metadata
 	ModTime  int64
 	Sharp    Sharpness
-	Look     *CameraLook // the camera's rendering (Standard profile), when known
-	Problem  string      // why the RAW data could not be decoded (preview shown)
-	LookV    int         // the look fit this source was prepared with (lookVersion when complete)
+	Look     *CameraLook   // the camera's rendering (Standard profile), when known
+	Lens     *raw.LensCorr // the camera's corrections for the lens used, when the file has them
+	Problem  string        // why the RAW data could not be decoded (preview shown)
+	LookV    int           // the look fit this source was prepared with (lookVersion when complete)
 
 	orientation int
 	levels      []*raw.RGBF // levels[0] is the largest preview level
@@ -70,6 +71,7 @@ func decodeFile(path string) (*decoded, error) {
 		Color:       newColorimetry(im.CamXYZ, im.CamMul, im.Raw),
 		Baseline:    im.BaselineExposure,
 		Meta:        im.Meta,
+		Lens:        im.Lens,
 		ModTime:     st.ModTime().UnixNano(),
 		orientation: im.Orientation,
 	}

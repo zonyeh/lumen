@@ -58,6 +58,65 @@ function frm(n, sx, sy) {
 }
 
 const HANDLES = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+
+// The crop never leaves the frame: these keep a dragged rectangle inside
+// while the pointer moves, so nothing jumps back on release.
+
+// inside tells whether the straightened rectangle lies within the frame.
+export function inside(d, FW, FH, eps = 0.01) {
+  return CORNERS.every(([a, b]) => {
+    const [x, y] = corner(d, (a * d.cw) / 2, (b * d.ch) / 2);
+    return x >= -eps && y >= -eps && x <= FW + eps && y <= FH + eps;
+  });
+}
+
+// fitMove slides the rectangle the least so it lies within the frame.
+export function fitMove(d, FW, FH) {
+  const [ca, sa] = rot(d);
+  const bx = (d.cw * Math.abs(ca) + d.ch * Math.abs(sa)) / 2;
+  const by = (d.cw * Math.abs(sa) + d.ch * Math.abs(ca)) / 2;
+  d.cx = clamp(d.cx, Math.min(bx, FW - bx), Math.max(bx, FW - bx));
+  d.cy = clamp(d.cy, Math.min(by, FH - by), Math.max(by, FH - by));
+  return d;
+}
+
+// fitResize goes from the rectangle d0 (which fits) towards the requested
+// edges (in d0's local frame) as far as the frame allows.
+export function fitResize(d0, req, FW, FH) {
+  const base = { left: -d0.cw / 2, right: d0.cw / 2, top: -d0.ch / 2, bottom: d0.ch / 2 };
+  const at = (t) => {
+    const L = base.left + (req.left - base.left) * t, R = base.right + (req.right - base.right) * t;
+    const T = base.top + (req.top - base.top) * t, B = base.bottom + (req.bottom - base.bottom) * t;
+    const [cx, cy] = corner(d0, (L + R) / 2, (T + B) / 2);
+    return { ...d0, cx, cy, cw: R - L, ch: B - T };
+  };
+  if (inside(at(1), FW, FH)) return at(1);
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 40; k++) {
+    const mid = (lo + hi) / 2;
+    if (inside(at(mid), FW, FH)) lo = mid; else hi = mid;
+  }
+  return at(lo);
+}
+
+// fitRotate turns d0 to the angle and shrinks it about its center just
+// enough to stay within the frame.
+export function fitRotate(d0, angle, FW, FH) {
+  const d = { ...d0, angle };
+  const [ca, sa] = rot(d);
+  let s = 1;
+  for (const [a, b] of CORNERS) {
+    const dx = (a * d0.cw) / 2, dy = (b * d0.ch) / 2;
+    const vx = dx * ca + dy * sa, vy = -dx * sa + dy * ca;
+    if (vx > 0) s = Math.min(s, (FW - d0.cx) / vx); else if (vx < 0) s = Math.min(s, d0.cx / -vx);
+    if (vy > 0) s = Math.min(s, (FH - d0.cy) / vy); else if (vy < 0) s = Math.min(s, d0.cy / -vy);
+  }
+  s = Math.max(0.05, s);
+  d.cw = d0.cw * s;
+  d.ch = d0.ch * s;
+  return d;
+}
 
 hooks.overlay.push((o) => {
   const n = activePhoto();
@@ -104,12 +163,13 @@ hooks.pointerDown.push((e, sx, sy) => {
     const [qx, qy] = frm(n, px, py);
     const d = { ...d0 };
     if (mode === 'move') {
-      d.cx = clamp(d0.cx + qx - fx, d0.cw / 2, FW - d0.cw / 2);
-      d.cy = clamp(d0.cy + qy - fy, d0.ch / 2, FH - d0.ch / 2);
+      d.cx = d0.cx + qx - fx;
+      d.cy = d0.cy + qy - fy;
+      fitMove(d, FW, FH);
     } else if (mode === 'rotate') {
       const c = scr(n, d0.cx, d0.cy);
       const a1 = Math.atan2(py - c[1], px - c[0]);
-      d.angle = clamp(d0.angle - ((a1 - a0) * 180) / Math.PI, -45, 45);
+      Object.assign(d, fitRotate(d0, clamp(d0.angle - ((a1 - a0) * 180) / Math.PI, -45, 45), FW, FH));
     } else {
       const [mx, my] = toLocal(d0, qx, qy);
       let left = -d0.cw / 2, right = d0.cw / 2, top = -d0.ch / 2, bottom = d0.ch / 2;
@@ -127,9 +187,7 @@ hooks.pointerDown.push((e, sx, sy) => {
         if (hx < 0) left = right - w; else if (hx > 0) right = left + w; else { left = -w / 2; right = w / 2; }
         if (hy < 0) top = bottom - hh; else if (hy > 0) bottom = top + hh; else { top = -hh / 2; bottom = hh / 2; }
       }
-      const cxl = (left + right) / 2, cyl = (top + bottom) / 2;
-      const [ncx, ncy] = corner(d0, cxl, cyl);
-      d.cx = ncx; d.cy = ncy; d.cw = right - left; d.ch = bottom - top;
+      Object.assign(d, fitResize(d0, { left, right, top, bottom }, FW, FH));
     }
     draft = d;
     drawOverlay();

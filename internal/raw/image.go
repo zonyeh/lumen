@@ -67,6 +67,9 @@ type Image struct {
 
 	Orientation int // EXIF orientation 1..8
 	Meta        Metadata
+	// Lens holds the camera's corrections for the lens the photo was taken
+	// with, when the file carries them (Sony ARW).
+	Lens *LensCorr
 }
 
 // Size returns the visible size before orientation.
@@ -90,6 +93,7 @@ type Info struct {
 	Height      int      `json:"height"` // oriented
 	Orientation int      `json:"orientation"`
 	Meta        Metadata `json:"meta"`
+	Lens        bool     `json:"lens,omitempty"` // the file carries the camera's lens corrections
 	FileSize    int64    `json:"fileSize"`
 	ModTime     int64    `json:"modTime"`
 }
@@ -289,6 +293,33 @@ func ReadMetadata(path string) (Metadata, error) {
 		return Metadata{}, errors.New("no IFD")
 	}
 	return readMeta(ifds), nil
+}
+
+// ReadLensCorr reads the camera's lens corrections of a Sony ARW without
+// decoding the picture (nil, nil when the file has none).
+func ReadLensCorr(path string) (*LensCorr, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	t, first, err := newTIFF(f, st.Size())
+	if err != nil {
+		return nil, err
+	}
+	ifds := t.chain(first)
+	if len(ifds) == 0 {
+		return nil, errors.New("no IFD")
+	}
+	sr2 := sonySR2(f, st.Size(), t.bo, ifds[0])
+	if sr2 == nil {
+		return nil, nil
+	}
+	return sonyLensCorr(sr2), nil
 }
 
 // previewImage decodes the largest JPEG embedded in a file.
