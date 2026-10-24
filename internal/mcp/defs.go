@@ -13,6 +13,35 @@ import (
 	"lumen/internal/doc"
 )
 
+// exportPhotos renders ids to files with the export options of the call.
+func exportPhotos(c *call, ids []string) (*ToolResult, error) {
+	q, _ := c.num("quality")
+	le, _ := c.num("long_edge")
+	o := app.ExportOptions{Dir: c.str("dir"), Format: c.str("format"), Quality: int(q), LongEdge: int(le), Suffix: c.str("suffix")}
+	c.act("Exporting "+plural(len(ids), "photo"), ids...)
+	files, err := c.app.Export(ids, o, func(done, total int, p string) {
+		c.app.Activity("claude", c.tool, fmt.Sprintf("Exported %s (%d of %d)", filepath.Base(p), done, total))
+	})
+	if err != nil && len(files) == 0 {
+		return nil, fmt.Errorf("nothing was exported: %w", err)
+	}
+	out := "Exported:\n" + strings.Join(files, "\n")
+	if err != nil {
+		out += "\nErrors: " + err.Error()
+	}
+	return text(out), nil
+}
+
+// albumIsOpen tells whether name (an album name or path) is the open album.
+func albumIsOpen(c *call, name string) bool {
+	for _, al := range c.app.AlbumInfos() {
+		if al.Current && (strings.EqualFold(al.Name, name) || al.Path == name) {
+			return true
+		}
+	}
+	return false
+}
+
 func init() {
 	def(&Tool{
 		Name:        "get_album",
@@ -694,21 +723,7 @@ func init() {
 			if err != nil {
 				return nil, err
 			}
-			q, _ := c.num("quality")
-			le, _ := c.num("long_edge")
-			o := app.ExportOptions{Dir: c.str("dir"), Format: c.str("format"), Quality: int(q), LongEdge: int(le), Suffix: c.str("suffix")}
-			c.act("Exporting "+plural(len(ids), "photo"), ids...)
-			files, err := c.app.Export(ids, o, func(done, total int, p string) {
-				c.app.Activity("claude", c.tool, fmt.Sprintf("Exported %s (%d of %d)", filepath.Base(p), done, total))
-			})
-			if err != nil && len(files) == 0 {
-				return nil, fmt.Errorf("nothing was exported: %w", err)
-			}
-			out := "Exported:\n" + strings.Join(files, "\n")
-			if err != nil {
-				out += "\nErrors: " + err.Error()
-			}
-			return text(out), nil
+			return exportPhotos(c, ids)
 		},
 	})
 
@@ -745,9 +760,17 @@ func init() {
 
 	def(&Tool{
 		Name:        "albums",
-		Description: "list album files, open one, or create a new album (the user's view switches with it). With ids, new creates the album from copies of those photos of the open album (edits, ratings and flags included) and opens it.",
-		Schema:      obj(map[string]any{"action": enum("", "list", "open", "new"), "name": str("Album name"), "ids": arr(str(""), "photos of the open album to copy into a new album")}, "action"),
+		Description: "Albums: list them, open one, create one (with ids: from copies of those photos of the open album, edits, ratings and flags included), rename one, delete one (it goes to the Trash; open another album before deleting the open one) or export every photo of one (the open album by default; another one is opened first). The user's view follows what is opened.",
+		Schema: obj(map[string]any{
+			"action":   enum("", "list", "open", "new", "rename", "delete", "export"),
+			"name":     str("Album name (export: the open album when empty)"),
+			"new_name": str("rename: the new name"),
+			"ids":      arr(str(""), "new: photos of the open album to copy into the new album"),
+			"dir":      str("export: output folder (default ~/Pictures/Lumen/exports)"), "format": enum("", "jpeg", "png", "tiff"),
+			"quality": num("export: JPEG quality (default 92)"), "long_edge": num("export: resize long edge in px, 0 = full"), "suffix": str("export: appended to file names"),
+		}, "action"),
 		Run: func(c *call) (*ToolResult, error) {
+			name := c.str("name")
 			switch c.str("action") {
 			case "list":
 				var b strings.Builder
@@ -767,7 +790,7 @@ func init() {
 				}
 				return text(b.String()), nil
 			case "open", "new":
-				if c.str("name") == "" {
+				if name == "" {
 					return nil, errors.New("name is required")
 				}
 				if c.str("action") == "new" {
@@ -778,8 +801,8 @@ func init() {
 							return nil, err
 						}
 					}
-					c.act("Creating album " + c.str("name"))
-					p, err := c.app.NewAlbum(c.str("name"), ids)
+					c.act("Creating album " + name)
+					p, err := c.app.NewAlbum(name, ids)
 					if err != nil {
 						return nil, err
 					}
@@ -788,13 +811,44 @@ func init() {
 					}
 					return text(fmt.Sprintf("Created and opened %s with %d item(s)", p, len(ids))), nil
 				}
-				c.act("Opening album " + c.str("name"))
-				if err := c.app.OpenAlbum(c.str("name")); err != nil {
+				c.act("Opening album " + name)
+				if err := c.app.OpenAlbum(name); err != nil {
 					return nil, err
 				}
 				return text("Opened " + c.app.Store.Path()), nil
+			case "rename":
+				to := c.str("new_name")
+				if name == "" || to == "" {
+					return nil, errors.New("name and new_name are required")
+				}
+				c.act("Renaming album " + name)
+				if err := c.app.RenameAlbum(name, to); err != nil {
+					return nil, err
+				}
+				return text(fmt.Sprintf("Renamed %s to %s", name, to)), nil
+			case "delete":
+				if name == "" {
+					return nil, errors.New("name is required")
+				}
+				c.act("Moving album " + name + " to the Trash")
+				if err := c.app.DeleteAlbum(name); err != nil {
+					return nil, err
+				}
+				return text("Moved " + name + " to the Trash (the photo files stay where they are)"), nil
+			case "export":
+				if name != "" && !albumIsOpen(c, name) {
+					c.act("Opening album " + name)
+					if err := c.app.OpenAlbum(name); err != nil {
+						return nil, err
+					}
+				}
+				ids := c.allPhotos()
+				if len(ids) == 0 {
+					return nil, errors.New("the album has no photos")
+				}
+				return exportPhotos(c, ids)
 			}
-			return nil, errors.New("action must be list, open or new")
+			return nil, errors.New("action must be list, open, new, rename, delete or export")
 		},
 	})
 

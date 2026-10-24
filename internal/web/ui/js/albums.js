@@ -1,6 +1,6 @@
 // The albums area: every album as a card with what it holds. The album
 // button in the top bar opens and closes it.
-import { S, on, emit } from './store.js';
+import { S, on, emit, select } from './store.js';
 import { post, getJSON } from './api.js';
 import { h, toast, showMenu, fmtBytes as bytes } from './ui.js';
 import { icon } from './icons.js';
@@ -107,12 +107,7 @@ function card(a) {
   menuBtn.onclick = (e) => {
     e.stopPropagation();
     const r = menuBtn.getBoundingClientRect();
-    showMenu(r.left, r.bottom + 4, [
-      { label: a.current ? 'Back to this album' : 'Open', run: () => open(a) },
-      { label: 'Rename', run: () => rename(a) },
-      '-',
-      { label: 'Move to Trash', run: () => remove(a) },
-    ]);
+    showMenu(r.left, r.bottom + 4, menuFor(a));
   };
 
   const el = h('article', { class: 'al-card' + (a.current ? ' current' : ''), tabindex: '0', title: a.current ? 'The album open now' : `Open ${a.name}` },
@@ -127,7 +122,59 @@ function card(a) {
       h('div', { class: 'al-foot' }, `Changed ${ago(+new Date(a.modified))}`)));
   el.onclick = () => open(a);
   el.onkeydown = (e) => { if (e.key === 'Enter') open(a); };
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showMenu(e.clientX, e.clientY, menuFor(a));
+  });
   return el;
+}
+
+// menuFor lists what can be done with an album (the ••• button and the
+// right click share it).
+function menuFor(a) {
+  return [
+    { label: a.current ? 'Back to this album' : 'Open', run: () => open(a) },
+    { label: 'Rename…', run: () => rename(a) },
+    { label: 'Export all photos…', run: () => exportAll(a) },
+    '-',
+    { label: 'Move to Trash', run: () => remove(a) },
+  ];
+}
+
+// The open album's name in the top bar answers the right click too.
+albumBtn.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const a = { name: document.getElementById('album-name').textContent, path: S.path, current: true };
+  showMenu(e.clientX, e.clientY, [
+    { label: 'Rename…', run: () => rename(a) },
+    { label: 'Export all photos…', run: () => exportAll(a) },
+    '-',
+    { label: 'Move to Trash', run: () => remove(a) },
+  ]);
+});
+
+// exportAll opens the album when it is not the open one, then the export
+// dialog for every photo in it.
+async function exportAll(a) {
+  hideAlbums();
+  if (!a.current && S.path !== a.path) {
+    try {
+      await post('albums/open', { name: a.path });
+    } catch (err) {
+      toast(err.message, true);
+      return;
+    }
+    // The album arrives with the next state: wait for it.
+    for (let i = 0; i < 100 && S.path !== a.path; i++) await new Promise((r) => setTimeout(r, 100));
+    if (S.path !== a.path) {
+      toast('The album did not open', true);
+      return;
+    }
+  }
+  select([]);
+  const { openExport } = await import('./dialogs.js');
+  openExport();
 }
 
 async function open(a) {

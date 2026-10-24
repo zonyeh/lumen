@@ -140,7 +140,7 @@ export function openExport() {
   const all = ids.length ? ids : S.order.filter((id) => S.nodes.get(id)?.type === 'photo');
   if (!all.length) return toast('There are no photos to export');
   exp.dataset.ids = JSON.stringify(all);
-  document.getElementById('export-count').textContent = ids.length ? `${all.length} selected photo${all.length > 1 ? 's' : ''}` : `all ${all.length} photos`;
+  document.getElementById('export-count').textContent = ids.length ? `${all.length} selected photo${all.length > 1 ? 's' : ''}` : all.length > 1 ? `all ${all.length} photos` : 'the only photo';
   document.getElementById('ex-dir').value = localStorage.getItem('lumen.exportDir') || S.home + '/Pictures/Lumen/exports';
   exp.showModal();
 }

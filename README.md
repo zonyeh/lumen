@@ -109,7 +109,9 @@ Tools: `get_album` (with each photo's sharpness verdict), `get_photo`,
 `reset_adjustments`, `copy_adjustments`, `add_mask`, `update_mask`,
 `remove_mask`, `set_crop`, `reorder_photos`, `sort_photos`, `duplicate_photo`,
 `remove_items`, `add_note`, `set_metadata`, `presets`, `export_photos`, `undo`,
-`redo`, `focus`, `albums`, `batch`.
+`redo`, `focus`, `albums`, `batch`. Photo ids accept `all` for every photo of
+the open album; `albums` lists, opens, creates, renames, deletes (to the Trash)
+and exports whole albums.
 
 Every Claude action is shown in the window: a Claude cursor with a name tag moves
 to the photo with a label of what it is doing, the card gets an orange outline

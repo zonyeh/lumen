@@ -109,7 +109,7 @@ func enum(d string, vals ...string) map[string]any {
 	return map[string]any{"type": "string", "enum": vals, "description": d}
 }
 
-var idsProp = arr(str(""), "Photo/note ids (or exact names)")
+var idsProp = arr(str(""), "Photo/note ids (or exact names); \"all\" = every photo of the open album")
 var idProp = str("Photo id (or exact file name)")
 
 // --- call helpers ---
@@ -166,6 +166,10 @@ func (c *call) strs(k string) []string {
 func (c *call) resolve(refs []string) ([]string, error) {
 	var out []string
 	for _, r := range refs {
+		if r == "all" {
+			out = append(out, c.allPhotos()...)
+			continue
+		}
 		n, err := c.app.Store.Resolve(r)
 		if err != nil {
 			return nil, err
@@ -173,6 +177,17 @@ func (c *call) resolve(refs []string) ([]string, error) {
 		out = append(out, n.ID)
 	}
 	return out, nil
+}
+
+// allPhotos lists every photo of the open album, in its order.
+func (c *call) allPhotos() []string {
+	var out []string
+	for _, n := range c.app.Store.Snapshot().Nodes {
+		if n.Type == "photo" {
+			out = append(out, n.ID)
+		}
+	}
+	return out
 }
 
 // ids reads "ids" or "id".
