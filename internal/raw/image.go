@@ -17,6 +17,7 @@ type Metadata struct {
 	Make         string    `json:"make,omitempty"`
 	Model        string    `json:"model,omitempty"`
 	Lens         string    `json:"lens,omitempty"`
+	Style        string    `json:"style,omitempty"` // picture style the camera rendered with (Sony Creative Style / Look)
 	ISO          int       `json:"iso,omitempty"`
 	ExposureTime float64   `json:"exposureTime,omitempty"` // seconds
 	FNumber      float64   `json:"fNumber,omitempty"`
@@ -250,6 +251,9 @@ func readMeta(ifds []*IFD) Metadata {
 			m.ExposureBias = e.Float(0)
 		}
 		m.Lens = strings.TrimSpace(ex.Str(0xa434))
+		if mk := ex.Maker; mk != nil && strings.HasPrefix(strings.ToUpper(m.Make), "SONY") {
+			m.Style = sonyStyle(mk.Str(0xb020))
+		}
 		if s := ex.Str(0x9003); s != "" {
 			if t, err := time.ParseInLocation("2006:01:02 15:04:05", s, time.Local); err == nil {
 				m.Taken = t
@@ -262,6 +266,29 @@ func readMeta(ifds []*IFD) Metadata {
 		}
 	}
 	return m
+}
+
+// ReadMetadata reads the EXIF of a TIFF-based file (RAW or TIFF) without
+// decoding the picture.
+func ReadMetadata(path string) (Metadata, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Metadata{}, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return Metadata{}, err
+	}
+	t, first, err := newTIFF(f, st.Size())
+	if err != nil {
+		return Metadata{}, err
+	}
+	ifds := t.chain(first)
+	if len(ifds) == 0 {
+		return Metadata{}, errors.New("no IFD")
+	}
+	return readMeta(ifds), nil
 }
 
 // previewImage decodes the largest JPEG embedded in a file.

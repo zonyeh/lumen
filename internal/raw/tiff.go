@@ -48,6 +48,7 @@ type IFD struct {
 	Entries map[uint16]*Entry
 	Sub     []*IFD // SubIFDs (tag 0x14a)
 	Exif    *IFD
+	Maker   *IFD // maker note of the Exif IFD, when it is a plain IFD (Sony, Canon)
 }
 
 // tiffFile parses TIFF structures from a random-access reader.
@@ -151,6 +152,14 @@ func (t *tiffFile) parseIFD(off, base int64, depth int) (*IFD, int64, error) {
 	if e := ifd.Entries[0x8769]; e != nil {
 		if exif, _, err := t.parseIFD(int64(e.Uint(0))+base, base, depth+1); err == nil {
 			ifd.Exif = exif
+			// Maker notes without a text header (Sony, Canon) are plain IFDs
+			// whose offsets count from the TIFF header like any other; the
+			// ones with a header fail the entry-count check and are skipped.
+			if mn := exif.Entries[0x927c]; mn != nil && mn.Type == tUndefined && mn.Count > 2 {
+				if m, _, err := t.parseIFD(int64(mn.Offset), base, depth+1); err == nil {
+					exif.Maker = m
+				}
+			}
 		}
 	}
 	return ifd, next, nil

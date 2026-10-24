@@ -20,8 +20,11 @@ no account: your RAW files never leave your Mac.
 - **Native Mac app** — a small WebKit window (`Lumen.app`) over a local server;
   photos are shown pixel for pixel, with 100% views from the full sensor data.
 
+![Lumen album: a masonry wall of RAW photos while Claude edits one of them, with the develop panel open](docs/screenshots/album.jpg)
+
 > Status: early and moving fast. Sony A7 III (ARW) and DNG are what it has been
-> tested on most. See [Limitations](#limitations).
+> tested on most. See [Limitations](#limitations). The screenshots use CC0 sample
+> RAW files from [raw.pixls.us](https://raw.pixls.us).
 
 ## Contents
 
@@ -122,6 +125,8 @@ the height; brush sizes are fractions of the long edge. `render_photo` with
 The MCP server also answers over streamable HTTP at `POST /mcp` for other
 clients.
 
+![Lumen single photo view: a RAW developed with Lightroom-style sliders, histogram and camera data](docs/screenshots/develop.jpg)
+
 ## Features
 
 - **Album**: masonry wall (automatic or 2–8 columns), drag to reorder, sort by
@@ -136,7 +141,10 @@ clients.
   rendering, which a plain camera matrix misses); the camera's grain in flat areas
   as the target of noise reduction at every zoom; and the sharpening that gives
   the camera's crispness on real detail. The noise and sharpening sliders add to
-  those built-in amounts. JPEG, PNG and TIFF files open as they are.
+  those built-in amounts. Since the embedded JPEG carries the picture style the
+  camera was set to, the profile is named after it on Sony bodies (Camera
+  Standard, Camera Vivid, Camera Neutral…). JPEG, PNG and TIFF files open as they
+  are.
 - **Develop** (per photo): white balance (temp/tint on a log scale, picker, auto),
   exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze,
   vibrance, saturation, parametric and point tone curves (RGB/R/G/B), color mixer
@@ -148,6 +156,8 @@ clients.
 - **Masks**: linear and radial gradients, brush (feather, flow, erase), luminance
   range, color range, whole photo; add/subtract/intersect shapes, invert, amount,
   and 17 local sliders.
+
+  ![Lumen masks: two radial masks added by Claude on a leaf, with the overlay on and local adjustments](docs/screenshots/masks.jpg)
 - **Selection**: a click selects one photo; its check (the circle in its corner)
   adds or removes it; a rectangle dragged on empty space and ⌘A select several.
   With several selected a bar offers Auto tone, Reset, New album (copies with

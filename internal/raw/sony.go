@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -102,6 +103,11 @@ func sonySR2(data []byte, bo binary.ByteOrder, d0 *IFD) *IFD {
 		return nil
 	}
 	off, n, key := int64(pd.Uint(0x7200, 0)), int64(pd.Uint(0x7201, 0)), pd.Uint(0x7221, 0)
+	// The key is stored as four undefined bytes: read it as one 32-bit
+	// value in the file's byte order (as dcraw does), not as its first byte.
+	if e := pd.Get(0x7221); e != nil && len(e.data) >= 4 && (e.Type == tUndefined || e.Type == tByte) {
+		key = bo.Uint32(e.data)
+	}
 	if off <= 0 || n <= 0 || off+n > int64(len(data)) {
 		return nil
 	}
@@ -116,6 +122,49 @@ func sonySR2(data []byte, bo binary.ByteOrder, d0 *IFD) *IFD {
 		return nil
 	}
 	return sr2
+}
+
+// sonyStyle turns the Creative Style / Creative Look code the camera writes
+// in its maker note (tag 0xb020) into the name its menus show.
+func sonyStyle(code string) string {
+	code = strings.TrimSpace(code)
+	switch code {
+	case "NightView", "Nightview":
+		return "Night Scene"
+	case "Autumn":
+		return "Autumn Leaves"
+	case "None", "":
+		return ""
+	}
+	return code
+}
+
+// sonyEdgeTrim returns how many invalid columns end the mosaic of the Sony
+// bodies that write no crop tags, by sensor size (the trims dcraw applies).
+func sonyEdgeTrim(w, h int, model string) int {
+	switch w {
+	case 4288:
+		return 32
+	case 4928:
+		if h < 3280 {
+			return 8
+		}
+	case 5504:
+		if h > 3664 {
+			return 8
+		}
+		return 32
+	case 6048:
+		if strings.Contains(model, "RX1") || strings.Contains(model, "A99") {
+			return 30
+		}
+		return 24
+	case 7392:
+		return 30
+	case 8000:
+		return 32
+	}
+	return 0
 }
 
 // sonyDecrypt applies Sony's XOR pad stream in place (from dcraw).

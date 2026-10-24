@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"lumen/internal/raw"
 )
@@ -88,6 +89,13 @@ func readHeader(r io.Reader) (*proxyHeader, error) {
 	}
 	if h.Version != proxyVersion {
 		return nil, errors.New("old proxy")
+	}
+	if h.Meta.Style == "" && strings.HasPrefix(strings.ToUpper(h.Meta.Make), "SONY") {
+		// Proxies written before the picture style was read: take it from
+		// the file's EXIF instead of rebuilding.
+		if m, err := raw.ReadMetadata(h.Path); err == nil {
+			h.Meta.Style = m.Style
+		}
 	}
 	return &h, nil
 }

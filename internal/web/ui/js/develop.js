@@ -718,6 +718,10 @@ export function updatePanel(animate = false) {
     c.set(v ?? getPath(defaultsFor(n), key) ?? 0, animate);
   }
   profileSel.value = n.settings.profile;
+  // Standard is the camera's own rendering of this shot: name the style it used.
+  const std = [...profileSel.options].find((o) => o.value === 'standard');
+  const style = n.info?.meta?.style;
+  if (std) std.textContent = n.info?.raw && style ? `Camera ${style}` : 'Standard';
   [...treatSeg.children].forEach((b) => b.classList.toggle('active', b.dataset.v === n.settings.treatment));
   wbSel.value = n.settings.wb;
   aspectSel.value = n.settings.crop.aspect || 'free';
@@ -748,7 +752,7 @@ export function aperture(f) {
 
 function drawHeader(n) {
   const m = n.info?.meta || {};
-  const kind = n.info ? `${n.info.kind.toUpperCase()}, ${n.info.width} × ${n.info.height}` : '';
+  const kind = n.info ? [`${n.info.kind.toUpperCase()}, ${n.info.width} × ${n.info.height}`, m.style ? `${m.style} style` : ''].filter(Boolean).join(', ') : '';
   const camera = [m.make && m.model && !m.model.toLowerCase().startsWith(m.make.toLowerCase().split(' ')[0]) ? m.make.split(' ')[0] + ' ' + m.model : m.model, m.lens ? 'with ' + m.lens : ''].filter(Boolean).join(' ');
   const preview = /preview$/.test(n.info?.kind || '');
   const meta = [h('div', {}, camera || 'No camera data'), h('div', {}, kind)];

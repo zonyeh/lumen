@@ -129,6 +129,12 @@ func decodeTIFFRaw(data []byte) (*Image, error) {
 			im.Crop = r
 		}
 	}
+	// Older Sony bodies (A7, A7 II, A7R, A7S II…) write no crop tags and
+	// their mosaic ends in invalid columns (they embed only a small preview,
+	// so its size cannot tell where the picture stops either).
+	if !isDNG && im.Crop == image.Rect(0, 0, w, h) && strings.HasPrefix(strings.ToUpper(im.Meta.Make), "SONY") {
+		im.Crop.Max.X = w - sonyEdgeTrim(w, h, im.Meta.Model)
+	}
 
 	// Levels.
 	im.White = float32(int(1)<<uint(min(bps, 16)) - 1)
