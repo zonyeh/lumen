@@ -1,0 +1,18 @@
+# Build outputs
+/bin/
+/dist/
+*.test
+*.out
+
+# macOS
+.DS_Store
+._*
+
+# Editors and tools
+.idea/
+.vscode/
+.playwright-mcp/
+
+# Lumen data never lives in the repository (it is in ~/Pictures/Lumen)
+*.lumen
+*.lpx

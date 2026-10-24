@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="lumen-ui" content="{{v}}">
+<title>Lumen</title>
+<link rel="preload" href="/static/{{v}}/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/{{v}}/css/app.css">
+<script type="module" src="/static/{{v}}/js/main.js"></script>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="tb-left">
+      <button id="sidebar-btn" class="icon-btn" title="Show or hide the photo list" aria-pressed="true">
+        <svg viewBox="0 0 16 16" class="ico"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></svg>
+      </button>
+      <span class="mark" aria-hidden="true"></span>
+      <button class="album-switch" id="album-btn" title="All albums">
+        <span id="album-name">Album</span>
+        <svg viewBox="0 0 16 16" class="ico sm"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+      </button>
+    </div>
+    <div class="tb-center">
+      <div id="presence" class="presence idle" title="What Claude is doing in this album">
+        <span class="avatar" aria-hidden="true"></span>
+        <span class="who">Claude</span>
+        <span class="what" id="presence-text">is idle</span>
+        <button id="follow-btn" class="follow on" title="Follow Claude: show and select the photo Claude is editing" aria-pressed="true">
+          <svg viewBox="0 0 16 16" class="ico sm"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="2"/></svg>
+          <span>Follow</span>
+        </button>
+      </div>
+    </div>
+    <div class="tb-right">
+      <button id="undo-btn" class="icon-btn" title="Undo (⌘Z)"><svg viewBox="0 0 16 16" class="ico"><path d="M5.5 3 2.5 6l3 3"/><path d="M2.5 6h7a4 4 0 0 1 0 8H7"/></svg></button>
+      <button id="redo-btn" class="icon-btn" title="Redo (⇧⌘Z)"><svg viewBox="0 0 16 16" class="ico"><path d="m10.5 3 3 3-3 3"/><path d="M13.5 6h-7a4 4 0 0 0 0 8H9"/></svg></button>
+      <span class="tb-sep"></span>
+      <button id="import-btn" class="btn" title="Import photos"><svg viewBox="0 0 16 16" class="ico narrow-only"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg><span class="lbl">Import</span></button>
+      <button id="export-btn" class="btn primary">Export</button>
+    </div>
+  </header>
+
+  <aside id="left">
+    <div class="pane-head"><span>Photos</span><span class="count" id="layer-count"></span></div>
+    <label class="search">
+      <svg viewBox="0 0 16 16" class="ico sm"><circle cx="7" cy="7" r="4.5"/><path d="m10.4 10.4 3.1 3.1"/></svg>
+      <input id="photo-search" type="search" placeholder="Search by name" spellcheck="false" autocomplete="off" aria-label="Search photos by name" title="Search by name (⌘F); Enter selects what it finds">
+    </label>
+    <div id="layers" class="layers"></div>
+    <section class="activity-pane" id="activity-pane">
+      <button class="pane-head pane-toggle" id="activity-toggle">
+        <span>Activity</span>
+        <svg viewBox="0 0 16 16" class="ico sm chev"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+      </button>
+      <div id="activity" class="activity"></div>
+    </section>
+  </aside>
+
+  <section id="main">
+  <div id="filterbar" class="filterbar">
+    <div class="fgroup" title="Show photos with at least this many stars">
+      <span class="flabel">Rating</span>
+      <div class="fstars" id="f-stars">
+        <button data-r="1" aria-label="1 star or more"></button><button data-r="2" aria-label="2 stars or more"></button><button data-r="3" aria-label="3 stars or more"></button><button data-r="4" aria-label="4 stars or more"></button><button data-r="5" aria-label="5 stars"></button>
+      </div>
+    </div>
+    <div class="fgroup">
+      <span class="flabel">Focus</span>
+      <div class="seg fseg" id="f-sharp">
+        <button data-v="all" class="active">All</button>
+        <button data-v="sharp">Sharp <span class="fc"></span></button>
+        <button data-v="soft">Out of focus <span class="fc"></span></button>
+        <button data-v="motion">Motion blur <span class="fc"></span></button>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <span class="fcount" id="f-count"></span>
+    <button class="link" id="f-clear" hidden>Clear filters</button>
+  </div>
+  <div id="loupebar" class="filterbar loupebar" hidden>
+    <button class="btn ghost small lp-back" id="lp-back" title="Back to the album (Esc)"><svg viewBox="0 0 16 16" class="ico"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>Album</button>
+    <div class="lp-title">
+      <span class="lp-name" id="lp-name"></span>
+      <span class="lp-pos" id="lp-pos"></span>
+    </div>
+    <div class="lp-nav">
+      <button class="icon-btn sm" id="lp-prev" title="Previous photo (←)"><svg viewBox="0 0 16 16" class="ico"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button>
+      <button class="icon-btn sm" id="lp-next" title="Next photo (→)"><svg viewBox="0 0 16 16" class="ico"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button>
+    </div>
+    <div class="spacer"></div>
+    <span class="lp-raw" id="lp-raw"></span>
+    <div class="seg lp-zoom" id="lp-zoom" title="Whole photo or 100% (Z)">
+      <button data-z="fit" class="active">Fit</button>
+      <button data-z="100">100%</button>
+    </div>
+  </div>
+  <section id="albums-view" class="albums-view" hidden>
+    <div class="albums-head">
+      <button class="btn ghost small lp-back" id="albums-back" title="Back to the album (Esc)"><svg viewBox="0 0 16 16" class="ico"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg><span id="albums-back-name">Album</span></button>
+      <div class="albums-title">Albums <span class="muted" id="albums-count"></span></div>
+      <div class="spacer"></div>
+      <button class="btn small" id="albums-new">New album</button>
+    </div>
+    <div class="albums-grid" id="albums-grid"></div>
+  </section>
+  <main id="viewport" tabindex="0">
+    <div id="world"></div>
+    <svg id="overlay"></svg>
+    <canvas id="brush-canvas"></canvas>
+    <div id="marquee"></div>
+    <div id="claude-cursor" hidden>
+      <svg viewBox="0 0 20 20" class="arrow"><path d="M3.2 2.2 16.5 9.6l-6.1 1.5-2.9 5.8Z"/></svg>
+      <div class="tag">Claude</div>
+      <div class="bubble" id="claude-bubble"></div>
+    </div>
+    <div id="empty" hidden>
+      <div class="empty-card">
+        <div class="empty-title">Start with a folder of photos</div>
+        <p class="empty-sub">Import RAW files (Sony ARW, DNG) or JPEG, PNG and TIFF. They line up in a wall you can reorder by dragging, and each photo keeps its own edits.</p>
+        <button class="btn primary" id="empty-import">Import photos</button>
+        <p class="empty-hint">You can also drop files here, or ask Claude in Claude Code: “import my RAW folder and edit the series”.</p>
+      </div>
+    </div>
+    <div id="dock" class="dock">
+      <div class="dock-group" id="tools">
+        <button data-tool="select" class="tool" title="Select, and drag to reorder (V)"><svg viewBox="0 0 16 16" class="ico"><path d="M3.5 2.5 12 7.3l-3.8.9-1.9 3.6Z"/></svg></button>
+        <button data-tool="hand" class="tool" title="Pan (H, or hold Space)"><svg viewBox="0 0 16 16" class="ico"><path d="M5.2 8.4V3.8a1 1 0 0 1 2 0v3.4m0-4.2a1 1 0 0 1 2 0v4.2m0-3.2a1 1 0 0 1 2 0v4.6m0-2.4a1 1 0 0 1 2 0v3.3c0 2.6-2 4.5-4.6 4.5-1.8 0-3-.8-4-2.2L2.7 9.6a1 1 0 0 1 1.6-1.2l.9 1"/></svg></button>
+        <span class="dock-sep"></span>
+        <button data-tool="crop" class="tool" title="Crop and straighten (C)"><svg viewBox="0 0 16 16" class="ico"><path d="M4.5 1.5v10h10M1.5 4.5h10v10"/></svg></button>
+        <button data-tool="mask" class="tool" title="Masks (M)"><svg viewBox="0 0 16 16" class="ico"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11Z" class="fill"/></svg></button>
+        <button data-tool="note" class="tool" title="Note (N)"><svg viewBox="0 0 16 16" class="ico"><path d="M3 3.5h10M3 8h10M3 12.5h6"/></svg></button>
+      </div>
+      <span class="dock-sep"></span>
+      <button id="cols-btn" class="dock-text icon-text" title="Number of columns">
+        <svg viewBox="0 0 16 16" class="ico"><rect x="2" y="2.5" width="3.4" height="7" rx="1"/><rect x="6.3" y="2.5" width="3.4" height="11" rx="1"/><rect x="10.6" y="2.5" width="3.4" height="5" rx="1"/></svg>
+        <span class="lbl" id="cols-label">Auto</span>
+      </button>
+      <button id="focus-btn" class="dock-text icon-text" title="Highlight what is in focus (⇧F)" aria-pressed="false">
+        <svg viewBox="0 0 16 16" class="ico"><path d="M2 5.5V3a1 1 0 0 1 1-1h2.5M10.5 2H13a1 1 0 0 1 1 1v2.5M14 10.5V13a1 1 0 0 1-1 1h-2.5M5.5 14H3a1 1 0 0 1-1-1v-2.5"/><circle cx="8" cy="8" r="1.6" class="fill"/></svg>
+        <span class="lbl">Focus</span>
+      </button>
+      <button id="clip-btn" class="dock-text icon-text" title="Zebra: show blown highlights (red) and crushed shadows (blue) (J)" aria-pressed="false">
+        <svg viewBox="0 0 16 16" class="ico"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M5 13.5 13.5 5M2 10.5 10 2.5M9 13.5l4.5-4.5"/></svg>
+        <span class="lbl">Clipping</span>
+      </button>
+      <button id="before-btn" class="dock-text icon-text" title="Show without edits: the selected photos, or all of them when none is selected (\)">
+        <svg viewBox="0 0 16 16" class="ico"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M8 2.5v11"/><path d="M8 2.5h4.5a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H8Z" class="fill" opacity=".35"/></svg>
+        <span class="lbl">Before</span>
+      </button>
+      <span class="dock-sep"></span>
+      <div class="dock-group">
+        <button id="zoom-out" class="tool" title="Zoom out (⌘−)"><svg viewBox="0 0 16 16" class="ico"><path d="M3.5 8h9"/></svg></button>
+        <button id="zoom-label" class="dock-text zoom" title="Fit the album to the window (⇧1)">100%</button>
+        <button id="zoom-in" class="tool" title="Zoom in (⌘+)"><svg viewBox="0 0 16 16" class="ico"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
+      </div>
+      <span class="dock-sep extra"></span>
+      <div class="surround extra" id="surround" title="Background">
+        <button data-surround="black" title="Black"></button>
+        <button data-surround="graphite" title="Graphite"></button>
+        <button data-surround="mid" title="Mid gray"></button>
+      </div>
+    </div>
+  </main>
+  </section>
+
+  <aside id="right">
+    <div id="panel-empty" class="panel-empty">
+      <div class="pe-title">Nothing selected</div>
+      <p>Click a photo to develop it. Tick the circle in a photo's corner, or drag a box around photos, to select several, then work on them together. Drag photos to change their order.</p>
+    </div>
+    <div id="panel" hidden>
+      <div class="photo-head">
+        <div class="ph-row">
+          <div class="photo-title" id="photo-title"></div>
+          <button class="icon-btn sm" id="inspector-close" title="Close (Esc)"><svg viewBox="0 0 16 16" class="ico sm"><path d="m4.5 4.5 7 7m0-7-7 7"/></svg></button>
+        </div>
+        <div class="photo-rate" id="photo-rate"></div>
+        <div class="photo-meta" id="photo-meta"></div>
+        <dl class="exif" id="photo-exif"></dl>
+      </div>
+      <div class="histo-wrap">
+        <canvas id="histogram" width="600" height="180"></canvas>
+        <span class="clipmark lo" id="clip-lo" title="Shadows clipped"></span>
+        <span class="clipmark hi" id="clip-hi" title="Highlights clipped"></span>
+        <div class="clip" id="clip-info"></div>
+      </div>
+      <nav class="tabs" id="tabs">
+        <span class="tab-ind" aria-hidden="true"></span>
+        <button data-tab="edit" class="active">Edit</button>
+        <button data-tab="masks">Masks</button>
+        <button data-tab="presets">Presets</button>
+      </nav>
+      <div id="tab-edit" class="tab"></div>
+      <div id="tab-masks" class="tab" hidden></div>
+      <div id="tab-presets" class="tab" hidden></div>
+    </div>
+  </aside>
+</div>
+
+<dialog id="import-dialog" class="dialog wide">
+  <form method="dialog" class="dlg">
+    <div class="dlg-head">
+      <div class="dlg-title">Import photos</div>
+      <button value="cancel" class="icon-btn" title="Close"><svg viewBox="0 0 16 16" class="ico"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+    </div>
+    <div class="fs">
+      <nav class="fs-places" id="fs-volumes"></nav>
+      <div class="fs-main">
+        <div class="fs-bar">
+          <button type="button" class="icon-btn" id="fs-up" title="Enclosing folder"><svg viewBox="0 0 16 16" class="ico"><path d="M8 13V3.5M4 7l4-4 4 4"/></svg></button>
+          <div class="crumbs" id="fs-crumbs"></div>
+          <input id="fs-path" spellcheck="false" aria-label="Folder path">
+        </div>
+        <div class="fs-list" id="fs-list"></div>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <span class="muted" id="fs-info"></span>
+      <div class="spacer"></div>
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button type="button" class="btn primary" id="fs-import">Import</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="export-dialog" class="dialog">
+  <form method="dialog" class="dlg">
+    <div class="dlg-head">
+      <div class="dlg-title">Export <span id="export-count" class="muted"></span></div>
+      <button value="cancel" class="icon-btn" title="Close"><svg viewBox="0 0 16 16" class="ico"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+    </div>
+    <div class="form">
+      <label class="field"><span>Folder</span><input id="ex-dir" spellcheck="false"></label>
+      <div class="field"><span>Format</span>
+        <div class="seg" id="ex-format">
+          <button type="button" data-v="jpeg" class="active">JPEG</button>
+          <button type="button" data-v="png">PNG 16-bit</button>
+          <button type="button" data-v="tiff">TIFF 16-bit</button>
+        </div>
+      </div>
+      <label class="field" id="ex-quality-row"><span>Quality</span><input id="ex-quality" type="range" min="50" max="100" value="92"><output id="ex-quality-v">92</output></label>
+      <div class="field"><span>Size</span>
+        <div class="seg" id="ex-size">
+          <button type="button" data-v="0" class="active">Full</button>
+          <button type="button" data-v="4000">4000 px</button>
+          <button type="button" data-v="2048">2048 px</button>
+          <button type="button" data-v="1080">1080 px</button>
+        </div>
+      </div>
+      <label class="field"><span>Name suffix</span><input id="ex-suffix" placeholder="none"></label>
+    </div>
+    <div class="dlg-foot">
+      <div class="spacer"></div>
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button type="button" class="btn primary" id="ex-go">Export</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="newalbum-dialog" class="dialog">
+  <form method="dialog" class="dlg">
+    <div class="dlg-head">
+      <div class="dlg-title">New album <span id="na-count" class="muted"></span></div>
+      <button value="cancel" class="icon-btn" title="Close"><svg viewBox="0 0 16 16" class="ico"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+    </div>
+    <div class="form">
+      <label class="field"><span>Name</span><input id="na-name" spellcheck="false" autocomplete="off"></label>
+      <label class="field check-field"><span></span><span class="check-line"><input type="checkbox" id="na-open" checked> Open it now</span></label>
+      <p class="na-note">The photos are copied with their edits, ratings and flags; this album does not change.</p>
+      <p class="na-err" id="na-err" hidden></p>
+    </div>
+    <div class="dlg-foot">
+      <div class="spacer"></div>
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button type="button" class="btn primary" id="na-create">Create album</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="ask-dialog" class="dialog">
+  <form method="dialog" class="dlg">
+    <div class="dlg-head">
+      <div class="dlg-title" id="ask-title"></div>
+      <button value="cancel" class="icon-btn" title="Close"><svg viewBox="0 0 16 16" class="ico"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+    </div>
+    <div class="form">
+      <p class="na-note" id="ask-text"></p>
+      <label class="field" id="ask-field"><span>Name</span><input id="ask-input" spellcheck="false" autocomplete="off"></label>
+      <p class="na-err" id="ask-err" hidden></p>
+    </div>
+    <div class="dlg-foot">
+      <div class="spacer"></div>
+      <button value="cancel" class="btn ghost">Cancel</button>
+      <button type="button" class="btn primary" id="ask-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+<div id="menu" class="menu" hidden></div>
+</body>
+</html>
